@@ -10,7 +10,7 @@ resource "aws_lb" "app" {
   name               = "${var.project}-${var.environment}-alb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [module.vpc.app_security_group_id]
+  security_groups    = [module.vpc.alb_security_group_id]
   subnets            = module.vpc.public_subnet_ids
 
   tags = {
