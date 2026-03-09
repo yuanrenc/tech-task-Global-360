@@ -22,3 +22,12 @@ module "compute" {
   project           = var.project
   environment       = var.environment
 }
+
+module "cloudfront" {
+  source = "./modules/cloudfront"
+
+  primary_origin   = module.compute.eip_public_dns[0]
+  secondary_origin = module.compute.eip_public_dns[1]
+  project          = var.project
+  environment      = var.environment
+}
