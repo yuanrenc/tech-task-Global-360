@@ -22,11 +22,7 @@ The task comes with three key requirements:
 
 Meeting all three simultaneously is extremely challenging. If we only consider the first two requirements, the ideal architecture would be ALB + ASG with two EC2 instances running in parallel. This setup provides true zero downtime and automatic self‑healing, but the cost would exceed the budget. If the ASG runs only a single instance, then achieving zero downtime becomes nearly impossible. On the other hand, without using an ALB, it is also difficult to use an ASG effectively, because CloudFront requires static IPs and ASG instances cannot guarantee that, which means self‑healing would not function properly.
 
-Ultimately, the approach I chose prioritizes meeting the cost requirement while still providing the best possible level of zero downtime, at the expense of full self‑healing capabilities. There are two reasons for this decision:
-
-- From a product perspective, self‑healing is meant to improve user experience. The current simple cross‑AZ setup already provides a degree of resilience while keeping costs low.
-
-- From a technical perspective, enabling HTTPS and enforcing strict security group rules greatly enhances the overall security of the application.
+Ultimately, the approach I chose prioritizes meeting the cost requirement while still providing the best possible level of zero downtime, at the expense of full self‑healing capabilities.
 
 Based on all the considerations above, I chose the following architecture:
 
@@ -83,7 +79,16 @@ The ASG+ALB architecture as following:
                     │    (Web Browsers)       │
                     └───────────┬─────────────┘
                                 │
-                                │ HTTP
+                                │ HTTPS
+                                ▼
+                    ┌─────────────────────────┐
+                    │   Amazon CloudFront    │
+                    │                        │
+                    │   - Global Edge        │
+                    │                        │
+                    └───────────┬─────────────┘
+                                │
+                                │ Origin HTTP
                                 ▼
                     ┌─────────────────────────┐
                     │  Application Load       │
@@ -112,6 +117,7 @@ The ASG+ALB architecture as following:
     - Min: 2, Max: 2, Desired: 2
     - Health Check: ELB
     - Automatic instance replacement on failure
+    - Security: CloudFront-only access via Security Group
 ```
 
 ### 3.monthly cost
