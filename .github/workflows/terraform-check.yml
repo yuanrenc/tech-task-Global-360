@@ -2,8 +2,6 @@ name: Terraform Check
 
 on:
   push:
-    paths:
-      - 'terraform/**'
   workflow_dispatch:
 
 jobs:
