@@ -15,5 +15,3 @@ instances = [
   { name = "app-0", subnet_index = 0 },
   { name = "app-1", subnet_index = 1 }
 ]
-// Using a placeholder domain name since I don't have a real one to use
-domain_name = "global360-colin-wang.au"

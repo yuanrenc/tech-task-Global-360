@@ -38,7 +38,3 @@ variable "instance_type" {
   default = "t2.nano"
 }
 
-variable "domain_name" {
-  type = string
-}
-
