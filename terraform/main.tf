@@ -64,3 +64,11 @@ module "asg" {
   user_data_path    = "${path.module}/user-data/ec2-init.sh"
   target_group_arns = [aws_lb_target_group.app.arn]
 }
+
+module "cloudfront" {
+  source = "./modules/cloudfront"
+
+  project            = var.project
+  environment        = var.environment
+  origin_domain_name = aws_lb.app.dns_name
+}
