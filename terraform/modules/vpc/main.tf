@@ -53,10 +53,11 @@ resource "aws_security_group" "alb" {
   }
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app.id]
+    description     = "Allow HTTP to EC2 instances only"
   }
 
   tags = { Name = "${var.project}-${var.environment}-alb-sg" }
