@@ -25,6 +25,14 @@ variable "public_subnets" {
   description = "List of public subnets with CIDR and AZ"
 }
 
+variable "private_subnets" {
+  type = list(object({
+    cidr_block        = string
+    availability_zone = string
+  }))
+  description = "List of private subnets with CIDR and AZ"
+}
+
 variable "instances" {
   type = list(object({
     name         = string
