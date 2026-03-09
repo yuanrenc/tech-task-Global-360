@@ -1,77 +1,4 @@
-### 1. How to run a plan
-Option A - Run via GitHub Actions
-1. Go to GitHub → Actions
-2. Select the workflow named Terraform Check
-3. Click Run workflow
-(When a pull request is opened or updated, this workflow runs automatically and posts the Terraform plan output directly as a comment on the PR. Please refer to the example below: https://github.com/yuanrenc/tech-task-Global-360/pull/1)
-
-Option B - Run locally
-```Bash
-cd terraform
-make plan
-```
-
-### 2. Architecture
-The task comes with three key requirements:
-
-    It must operate without downtime.
-
-    It must support self‑healing.
-
-    The total cost must remain ≤ AUD 20 when fully deployed.
-
-Meeting all three simultaneously is extremely challenging. If we only consider the first two requirements, the ideal architecture would be ALB + ASG with two EC2 instances running in parallel. This setup provides true zero downtime and automatic self‑healing, but the cost would exceed the budget. If the ASG runs only a single instance, then achieving zero downtime becomes nearly impossible. On the other hand, without using an ALB, it is also difficult to use an ASG effectively, because CloudFront requires static IPs and ASG instances cannot guarantee that, which means self‑healing would not function properly.
-
-Ultimately, the approach I chose prioritizes meeting the cost requirement while still providing the best possible level of zero downtime, at the expense of full self‑healing capabilities.
-
-Based on all the considerations above, I chose the following architecture:
-
-```text
-                    ┌─────────────────────────┐
-                    │      End Users          │
-                    │    (Web Browsers)       │
-                    └───────────┬─────────────┘
-                                │
-                                │ HTTPS
-                                ▼
-                    ┌─────────────────────────┐
-                    │   Amazon CloudFront    │
-                    │   (CDN Distribution)   │
-                    │   - Global Edge        │
-                    │   - Failover Routing   │
-                    └───────────┬─────────────┘
-                                │
-                                │ HTTP (Origin)
-                                ▼
-                ┌───────────────┴───────────────┐
-                │                               │
-                ▼                               ▼
-    ┌─────────────────────┐       ┌─────────────────────┐
-    │  Availability Zone A│       │  Availability Zone B│
-    │  ┌───────────────┐  │       │  ┌───────────────┐  │
-    │  │ Public Subnet │  │       │  │ Public Subnet │  │
-    │  │               │  │       │  │               │  │
-    │  │ ┌───────────┐ │  │       │  │ ┌───────────┐ │  │
-    │  │ │ EC2       │ │  │       │  │ │ EC2       │ │  │
-    │  │ │ Instance  │ │  │       │  │ │ Instance  │ │  │
-    │  │ │ (Primary) │ │  │       │  │ │ (Backup)  │ │  │
-    │  │ └───────────┘ │  │       │  │ └───────────┘ │  │
-    │  └───────────────┘  │       │  └───────────────┘  │
-    └─────────────────────┘       └─────────────────────┘
-
-    CloudFront Origin Configuration:
-    - Primary Origin: EC2 Instance #1 (AZ-A)
-    - Secondary Origin: EC2 Instance #2 (AZ-B)
-    - Failover on health check failure
-    - EC2-SG: CloudFront-only access via Security Group
-```
-This is a simple architecture where CloudFront provides a stable endpoint and performs primary–secondary failover routing before directing traffic to EC2. The EC2 layer runs in an active‑active configuration to ensure minimal downtime. Because the Cloudfront require public IP/DNS, instances are deployed in public subnets. Security Groups are configured to ensure that only CloudFront is allowed to access the instances.
-
-Regarding the CI setup, granting the correct permissions in a public repository requires careful consideration. I used an OIDC + IAM Role approach, allowing only specific branches and pull‑request events to assume the role. The role is restricted to read‑only permissions to maximize security.
-
-If you are interested in the ASG + ALB architecture, I have deployed a working version of it in the ASG+ALB branch. In this design, the Auto Scaling Group provides automatic self‑healing, and the ALB distributes traffic across two different Availability Zones. One thing to note is that the EC2 instances need to download the Docker image from the internet, and due to cost constraints, the application does not use a private‑subnet‑plus‑NAT‑Gateway setup. Instead, the instances are placed in public subnets to avoid the additional cost of a NAT Gateway.
-
-The CloudFront + ALB + ASG architecture as following:
+# CloudFront → ALB → ASG 架构图 (含安全组配置)
 
 ```text
                         ┌─────────────────────────────┐
@@ -106,7 +33,7 @@ The CloudFront + ALB + ASG architecture as following:
 │                   │  • HTTP (80) from CloudFront│                │
 │                   │    Prefix List              │                │
 │                   │  Outbound:                  │                │
-│                   │  • HTTP (80) to EC2-SG      │                │
+│                   │  • HTTP (80) to SG-EC2      │                │
 │                   └─────────────────────────────┘                │
 │                                  │                               │
 │                                  │ HTTP (80)                     │
@@ -122,14 +49,23 @@ The CloudFront + ALB + ASG architecture as following:
 │  ┌─────────────────────────┐         ┌─────────────────────────┐│
 │  │  Availability Zone A    │         │  Availability Zone B    ││
 │  │  ┌───────────────────┐  │         │  ┌───────────────────┐  ││
+│  │  │  Public Subnet    │  │         │  │  Public Subnet    │  ││
+│  │  │   172.16.1.0/24   │  │         │  │    172.16.2.0/24  │  ││
+│  │  │                   │  │         │  │                   │  ││
 │  │  │  ┌─────────────┐  │  │         │  │  ┌─────────────┐  │  ││
 │  │  │  │   EC2       │  │  │         │  │  │   EC2       │  │  ││
 │  │  │  │  Instance   │  │  │         │  │  │  Instance   │  │  ││
 │  │  │  │  (ASG)      │  │  │         │  │  │  (ASG)      │  │  ││
 │  │  │  │  t2.nano    │  │  │         │  │  │  t2.nano    │  │  ││
-│  │  │  │  EC2-SG     │  │  │         │  │  │  EC2-SG     │  │  ││
-│  │  │  │HTTP from ALB│  │  │         │  │  │HTTP from ALB│  │  ││
 │  │  │  └─────────────┘  │  │         │  │  └─────────────┘  │  ││
+│  │  │                   │  │         │  │                   │  ││
+│  │  │  [SG-EC2]         │  │         │  │  [SG-EC2]         │  ││
+│  │  │  Inbound:         │  │         │  │  Inbound:         │  ││
+│  │  │  • HTTP (80)      │  │         │  │  • HTTP (80)      │  ││
+│  │  │    from SG-ALB    │  │         │  │    from SG-ALB    │  ││
+│  │  │  Outbound:        │  │         │  │  Outbound:        │  ││
+│  │  │  • All traffic    │  │         │  │  • All traffic    │  ││
+│  │  │    (0.0.0.0/0)    │  │         │  │    (0.0.0.0/0)    │  ││
 │  │  └───────────────────┘  │         │  └───────────────────┘  ││
 │  └─────────────────────────┘         └─────────────────────────┘│
 │                                                                  │
@@ -139,19 +75,45 @@ The CloudFront + ALB + ASG architecture as following:
 │  │  - Health Check Type: ELB                                  │ │
 │  │  - Automatic instance replacement on failure               │ │
 │  │  - Launch Template: Amazon Linux 2 + Docker                │ │
-│  │  - EC2-SG：Inbound： HTTP from SG-ALB                      │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
-### 3.monthly cost
 
-The estimated monthly cost for the current architecture is approximately USD $10. This estimate includes:
-- 2 EC2 t2.nano instances ($10)
+## 安全组详细配置
 
-For ALG+ASG architecture, the apporximately cost is USD $28. This includes:
-- 2 EC2 t2.nano instances ($10)
-- 1 ALB ($18)
+### 1. SG-ALB (ALB 安全组)
 
+| 类型 | 协议 | 端口 | 来源 | 说明 |
+|------|------|------|------|------|
+| Inbound | TCP | 80 | CloudFront Prefix List | 仅允许 CloudFront 访问 |
+| Outbound | TCP | 80 | SG-EC2 | 转发流量到 EC2 实例 |
 
+### 2. SG-EC2 (EC2 实例安全组)
 
+| 类型 | 协议 | 端口 | 来源/目标 | 说明 |
+|------|------|------|-----------|------|
+| Inbound | TCP | 80 | SG-ALB | 仅接受来自 ALB 的流量 |
+| Outbound | ALL | ALL | 0.0.0.0/0 | 允许访问互联网(下载 Docker 镜像) |
+
+## 流量路径
+
+1. **用户请求** → CloudFront (HTTPS:443)
+2. **CloudFront** → ALB (HTTP:80) [通过 SG-ALB 允许]
+3. **ALB** → Target Group → EC2 实例 (HTTP:80) [通过 SG-EC2 允许]
+4. **EC2 实例** → 处理请求并返回响应
+
+## 安全特性
+
+- ✅ **纵深防御**: 多层安全组隔离
+- ✅ **最小权限**: 仅开放必要端口
+- ✅ **来源限制**: ALB 仅接受 CloudFront 流量
+- ✅ **内部隔离**: EC2 仅接受 ALB 流量
+- ✅ **互联网访问**: EC2 可访问外部(用于拉取 Docker 镜像)
+
+## 高可用性特性
+
+- ✅ **跨可用区部署**: 2个 AZ 提供冗余
+- ✅ **自动扩展**: ASG 自动替换故障实例
+- ✅ **健康检查**: ALB + ASG 双重健康检查
+- ✅ **零停机**: 至少保持 2 个实例运行
