@@ -43,44 +43,50 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
 resource "aws_security_group" "alb" {
   name   = "${var.project}-${var.environment}-alb-sg"
   vpc_id = aws_vpc.main.id
-
-  ingress {
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
-    description     = "Allow HTTP from CloudFront only"
-  }
-
-  egress {
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    security_groups = [aws_security_group.app.id]
-    description     = "Allow HTTP to EC2 instances only"
-  }
-
-  tags = { Name = "${var.project}-${var.environment}-alb-sg" }
+  tags   = { Name = "${var.project}-${var.environment}-alb-sg" }
 }
 
 resource "aws_security_group" "app" {
   name   = "${var.project}-${var.environment}-app-sg"
   vpc_id = aws_vpc.main.id
+  tags   = { Name = "${var.project}-${var.environment}-app-sg" }
+}
 
-  ingress {
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-    description     = "Allow HTTP from ALB only"
-  }
+resource "aws_security_group_rule" "alb_ingress" {
+  type              = "ingress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  prefix_list_ids   = [data.aws_ec2_managed_prefix_list.cloudfront.id]
+  description       = "Allow HTTP from CloudFront only"
+  security_group_id = aws_security_group.alb.id
+}
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+resource "aws_security_group_rule" "alb_egress" {
+  type                     = "egress"
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.app.id
+  description              = "Allow HTTP to EC2 instances only"
+  security_group_id        = aws_security_group.alb.id
+}
 
-  tags = { Name = "${var.project}-${var.environment}-app-sg" }
+resource "aws_security_group_rule" "app_ingress" {
+  type                     = "ingress"
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb.id
+  description              = "Allow HTTP from ALB only"
+  security_group_id        = aws_security_group.app.id
+}
+
+resource "aws_security_group_rule" "app_egress" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.app.id
 }
